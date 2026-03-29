@@ -63,3 +63,5 @@ If you wish to add more social media sites for scraping. You can do so by append
 When using a website that is already included in the `socials.txt` file, the `--sm` flag may produce less useful output. To avoid this, consider excluding such URLs or refraining from using the `--sm` flag.
 
 ### LICENSE - [GNU](LICENSE)
+---
+Built by [champmq](https://github.com/champmq) — also check out [CoSINT](https://github.com/champmq/cosint), an AI-powered OSINT runtime.
