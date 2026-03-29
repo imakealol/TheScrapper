@@ -25,7 +25,7 @@ class InfoReader:
                 "urls": []
             }
 
-        self.content: list = content
+        self.content: dict = content
         self.social_path: str = social_path
         self.res: dict = {
             "phone": "/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,7}$/gm",

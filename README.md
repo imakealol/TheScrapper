@@ -1,6 +1,8 @@
 # TheScrapper
 
-TheScrapper is a versatile web scraping tool designed to extract emails, phone numbers, and social media accounts from websites. You can use the gathered information for various purposes, such as further research or contacting the website's owners.
+TheScrapper is a versatile web scraping tool designed to extract emails, phone numbers, and social media accounts from
+websites. You can use the gathered information for various purposes, such as further research or contacting the
+website's owners.
 
 ## Installation & Setup
 
@@ -40,10 +42,18 @@ python3 TheScrapper.py --url URL
 python3 TheScrapper.py --url URL --crawl
 ```
 
-- Retrieve more informaton about found social media accounts:
+- Retrieve more information about found social media accounts:
 
 ```bash
-python3 TheScrapper.py --url URL -s
+python3 TheScrapper.py --url URL --social-extract
+```
+
+- Specify what to output:
+
+```bash
+python3 TheScrapper.py --url URL -s # Social Media only
+python3 TheScrapper.py --url URL -e -p # Emails + Numbers only
+python3 TheScrapper.py --url URL # All output (default)
 ```
 
 For additional command-line arguments and options, refer to the help menu:
@@ -56,12 +66,15 @@ To remove the banner, simply add the "-b" flag.
 
 ## Adding More Social Media Sites
 
-If you wish to add more social media sites for scraping. You can do so by appending them to the `socials.txt` file. Feel free to contribute by submtting a pull request if you'd like to share your additions with the community.
+If you wish to add more social media sites for scraping. You can do so by appending them to the `socials.txt` file. Feel
+free to contribute by submitting a pull request if you'd like to share your additions with the community.
 
 ## Known Problems
 
-When using a website that is already included in the `socials.txt` file, the `--sm` flag may produce less useful output. To avoid this, consider excluding such URLs or refraining from using the `--sm` flag.
+When using a website that is already included in the `socials.txt` file, the `--sm` flag may produce less useful output.
+To avoid this, consider excluding such URLs or refraining from using the `--sm` flag.
 
 ### LICENSE - [GNU](LICENSE)
 ---
-Built by [champmq](https://github.com/champmq) — also check out [CoSINT](https://github.com/champmq/cosint), an AI-powered OSINT runtime.
+Built by [champmq](https://github.com/champmq) — also check out [CoSINT](https://github.com/champmq/cosint), an
+AI-powered OSINT runtime.

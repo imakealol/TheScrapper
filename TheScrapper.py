@@ -1,13 +1,13 @@
 import json
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
+from pathlib import Path
 
 import requests
-from requests.exceptions import MissingSchema
 
 from modules.info_reader import InfoReader
 from modules.scrapper import Scrapper
 
-banner: str = """
+BANNER: str = """
 ▄▄▄█████▓ ██░ ██ ▓█████   ██████  ▄████▄   ██▀███   ▄▄▄       ██▓███   ██▓███  ▓█████  ██▀███  
 ▓  ██▒ ▓▒▓██░ ██▒▓█   ▀ ▒██    ▒ ▒██▀ ▀█  ▓██ ▒ ██▒▒████▄    ▓██░  ██▒▓██░  ██▒▓█   ▀ ▓██ ▒ ██▒
 ▒ ▓██░ ▒░▒██▀▀██░▒███   ░ ▓██▄   ▒▓█    ▄ ▓██ ░▄█ ▒▒██  ▀█▄  ▓██░ ██▓▒▓██░ ██▓▒▒███   ▓██ ░▄█ ▒
@@ -18,133 +18,127 @@ banner: str = """
   ░       ░  ░░ ░   ░   ░  ░  ░  ░          ░░   ░   ░   ▒   ░░       ░░          ░     ░░   ░ 
           ░  ░  ░   ░  ░      ░  ░ ░         ░           ░  ░                     ░  ░   ░     
                                  ░                                                            
-                                  
 """
 
-parser = ArgumentParser(description="TheScrapper - Contact finder")
-parser.add_argument("-u", "--url", required=False,
-                    help="The URL of the target.")
-parser.add_argument("-us", "--urls", required=False,
-                    help="The URL of the target.")
-parser.add_argument("-c", "--crawl", default=False, required=False, action="store_true",
-                    help="Use every URL found on the site and hunt it down for information.")
-parser.add_argument("-b", "--banner", default=False, required=False, action="store_true",
-                    help="Use every URL found on the site and hunt it down for information.")
-parser.add_argument("-s", "--sm", default=False, required=False, action="store_true",
-                    help="Extract infos from the SocialMedia accounts.")
-parser.add_argument("-o", "--output", default=False, required=False, action="store_true",
-                    help="Save the output in a JSON file.")
-parser.add_argument("-v", "--verbose", default=False, required=False, action="store_true",
-                    help="Verbose output mode.")
-args = parser.parse_args()
+
+def build_parser() -> ArgumentParser:
+    p = ArgumentParser(description="TheScrapper - Contact finder")
+    p.add_argument("-u",   "--url",            help="Target URL.")
+    p.add_argument("-us",  "--urls",           help="File containing target URLs (one per line).")
+    p.add_argument("-c",   "--crawl",          action="store_true", help="Crawl every URL found on the site.")
+    p.add_argument("-b",   "--banner",         action="store_true", help="Suppress the banner.")
+    p.add_argument("-e",   "--email",          action="store_true", help="Extract email addresses.")
+    p.add_argument("-n",   "--number",         action="store_true", help="Extract phone numbers.")
+    p.add_argument("-s",   "--socials",        action="store_true", help="Extract and print social media links.")
+    p.add_argument("--social-extract",         action="store_true", help="Fetch detailed info for found social media links (implies --socials).")
+    p.add_argument("-o",   "--output",         action="store_true", help="Save output to a JSON file.")
+    p.add_argument("-v",   "--verbose",        action="store_true", help="Verbose output.")
+    return p
 
 
-def verbPrint(content: str):
-    if args.verbose:
-        print(content)
-    pass
+def normalize_url(url: str) -> str:
+    if not url.startswith(("http://", "https://")):
+        return "http://" + url
+    return url
 
 
-target_type = ""
-if not args.url and not args.urls:
-    exit("Please add --url or --urls")
-else:
-    if args.url:
-        target_type = "URL"
-    else:
-        target_type = "FILE"
-
-if not args.banner:
-    print(banner)
-
-if target_type == "URL":
-    if not (args.url.startswith("https://") or args.url.startswith("http://")):
-        args.url = "http://" + args.url
-
-    print("*" * 50 + "\n" + f"Target: {args.url}" + "\n" + "*" * 50 + "\n")
-
-    requests.get(args.url)
-
-    url: str = args.url
-    verbPrint("Scraping (and crawling) started")
+def scrape(url: str, args: Namespace) -> dict:
+    """Scrape a single URL and return structured results."""
     scrap = Scrapper(url=url, crawl=args.crawl)
-    verbPrint("Scraping (and crawling) done\nReading and sorting information")
-    IR = InfoReader(content=scrap.getText())
-    emails: list = IR.getEmails()
-    numbers = IR.getPhoneNumber()
-    sm: list = IR.getSocials()
-    verbPrint("Reading and sorting information done")
+    ir = InfoReader(content=scrap.getText())
 
-    print("\n")
-    print("E-Mails: " + "\n - ".join(emails))
-    print("Numbers:" + "\n - ".join(numbers))
-    if args.sm:
-        print("SocialMedia: ")
-        sm_info = IR.getSocialsInfo()
-        for x in sm_info:
-            url = x["url"]
-            info = x["info"]
-            if info:
-                print(f" - {url}:")
-                for y in info:
-                    print(f"     - {y}: {info[y]}")
-            else:
-                print(f" - {url}")
-    else:
-        print("SocialMedia: " + ", ".join(sm))
-    if args.output:
-        out = {
-            "E-Mails": emails,
-            "SocialMedia": sm,
-            "Numbers": numbers
-        }
-        file_name = url.lower().replace(
-            "http://", "").replace("https://", "").replace("/", "")
-        json.dump(out, open(f"output/{file_name}.json", "w+"), indent=4)
+    extract_contacts = not args.email and not args.number and not args.socials
+    want_sm = args.socials or args.social_extract
 
-elif target_type == "FILE":
-    out = []
-    for url in open(args.urls, "r").readlines():
-        url = url.replace("\n", "")
-        print("\n\n")
+    result: dict = {"Target": url}
 
-        if "https://" not in url:
-            url = "https://" + url
+    if args.email or extract_contacts:
+        result["E-Mails"] = ir.getEmails()
+    if args.number or extract_contacts:
+        result["Numbers"] = ir.getPhoneNumber()
+    if want_sm or extract_contacts:
+        result["SocialMedia"] = ir.getSocials()
 
-        print("*" * 50 + "\n" + f"Target: {url}" + "\n" + "*" * 50 + "\n")
+    return result
 
-        requests.get(url)
-        verbPrint("Scraping (and crawling) started")
-        scrap = Scrapper(url=url, crawl=args.crawl)
-        verbPrint("Scraping (and crawling) done\nReading and sorting information")
-        IR = InfoReader(content=scrap.getText())
-        emails: list = IR.getEmails()
-        numbers = IR.getPhoneNumber()
-        sm: list = IR.getSocials()
-        out.append({
-            "Target": url,
-            "E-Mails": emails,
-            "SocialMedia": sm,
-            "Numbers": numbers
-        })
-        verbPrint("Reading and sorting information done")
-        print("E-Mails:\n" + "\n - ".join(emails))
-        print("Numbers:\n" + "\n - ".join(numbers))
-        if args.sm:
-            print("SocialMedia: ")
-            sm_info = IR.getSocialsInfo()
-            for x in sm_info:
-                url = x["url"]
-                info = x["info"]
+
+def print_result(result: dict, args: Namespace) -> None:
+    print("*" * 50)
+    print(f"Target: {result['Target']}")
+    print("*" * 50 + "\n")
+
+    if "E-Mails" in result:
+        emails = result["E-Mails"]
+        print("E-Mails:\n" + ("\n - ".join(emails) if emails else "  (none)"))
+
+    if "Numbers" in result:
+        numbers = result["Numbers"]
+        print("Numbers:\n" + ("\n - ".join(numbers) if numbers else "  (none)"))
+
+    if "SocialMedia" in result:
+        sm = result["SocialMedia"]
+        if args.social_extract:
+            ir = InfoReader(content=Scrapper(url=result["Target"], crawl=False).getText())
+            print("SocialMedia:")
+            for entry in ir.getSocialsInfo():
+                sm_url, info = entry["url"], entry["info"]
                 if info:
-                    print(f" - {url}:")
-                    for y in info:
-                        print(f"     - {y}: {info[y]}")
+                    print(f" - {sm_url}:")
+                    for k, v in info.items():
+                        print(f"     - {k}: {v}")
                 else:
-                    print(f" - {url}")
+                    print(f" - {sm_url}")
         else:
-            print("SocialMedia: " + ", ".join(sm))
+            print("SocialMedia: " + (", ".join(sm) if sm else "(none)"))
 
-    if args.output:
-        file_name = args.urls.replace("/", "_")
-        json.dump(out, open(f"output/{file_name}.json", "w+"), indent=4)
+    print()
+
+
+def save_output(data: dict | list, name: str) -> None:
+    Path("output").mkdir(exist_ok=True)
+    file_name = name.lower().replace("http://", "").replace("https://", "").replace("/", "")
+    out_path = Path("output") / f"{file_name}.json"
+    out_path.write_text(json.dumps(data, indent=4))
+    print(f"Saved → {out_path}")
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+
+    if not args.url and not args.urls:
+        raise SystemExit("Please add --url or --urls")
+
+    if not args.banner:
+        print(BANNER)
+
+    verbose = print if args.verbose else lambda *_: None
+
+    if args.url:
+        url = normalize_url(args.url)
+        requests.get(url)
+        verbose("Scraping started")
+        result = scrape(url, args)
+        verbose("Done")
+        print_result(result, args)
+        if args.output:
+            save_output(result, url)
+
+    else:
+        results = []
+        for raw in Path(args.urls).read_text().splitlines():
+            url = normalize_url(raw.strip())
+            if not url:
+                continue
+            requests.get(url)
+            verbose(f"Scraping {url}")
+            result = scrape(url, args)
+            verbose("Done")
+            print_result(result, args)
+            results.append(result)
+
+        if args.output:
+            save_output(results, args.urls.replace("/", "_"))
+
+
+if __name__ == "__main__":
+    main()
