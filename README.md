@@ -6,75 +6,71 @@ website's owners.
 
 ## Installation & Setup
 
-To get started with TheScrapper, follow these simple installation steps:
-
 1. Clone the repository:
-
 ```bash
 git clone https://github.com/champmq/TheScrapper.git
 ```
 
 2. Change the directory:
-
 ```bash
 cd TheScrapper
 ```
 
 3. Install all the requirements:
-
 ```bash
 pip3 install -r requirements.txt
 ```
 
-## Usage
+## Web UI
 
-TheScrapper offers several usage options:
+A browser-based interface is available. It supports single URL scraping and batch scraping from CSV or Excel files,
+with a live progress bar and direct download of results.
+```bash
+streamlit run app.py
+```
+
+## CLI Usage
 
 - Simple scan:
-
 ```bash
 python3 TheScrapper.py --url URL
 ```
 
 - Scan and crawl found URLs:
-
 ```bash
 python3 TheScrapper.py --url URL --crawl
 ```
 
 - Retrieve more information about found social media accounts:
-
 ```bash
 python3 TheScrapper.py --url URL --social-extract
 ```
 
-- Specify what to output:
-
+- Scrape from a CSV or Excel file:
 ```bash
-python3 TheScrapper.py --url URL -s # Social Media only
-python3 TheScrapper.py --url URL -e -p # Emails + Numbers only
-python3 TheScrapper.py --url URL # All output (default)
+python3 TheScrapper.py --csv targets.csv
+python3 TheScrapper.py --csv targets.xlsx --csv-column website
 ```
 
-For additional command-line arguments and options, refer to the help menu:
+Results are automatically written to `output/<filename>_results.csv` or `.xlsx`.
 
+
+For all available flags:
 ```bash
-python3 TheScrapper.py -h
+python3 TheScrapper.py --help
 ```
-
-To remove the banner, simply add the "-b" flag.
 
 ## Adding More Social Media Sites
 
-If you wish to add more social media sites for scraping. You can do so by appending them to the `socials.txt` file. Feel
-free to contribute by submitting a pull request if you'd like to share your additions with the community.
+If you wish to add more social media sites for scraping, you can do so by appending them to the `socials.txt` file.
+Feel free to contribute by submitting a pull request if you'd like to share your additions with the community.
 
 ## Known Problems
 
-When using a website that is already included in the `socials.txt` file, the `--sm` flag may produce less useful output.
-To avoid this, consider excluding such URLs or refraining from using the `--sm` flag.
+When using a website that is already included in the `socials.txt` file, the `--social-extract` flag may produce less
+useful output. To avoid this, consider excluding such URLs or refraining from using the flag.
 
 ### LICENSE - [GNU](LICENSE)
 ---
-Built by [champmq](https://github.com/champmq) — also check out [CoSINT](https://github.com/champmq/cosint), an
+Built by [champmq](https://github.com/champmq) -- also check out [CoSINT](https://github.com/champmq/cosint), an
 AI-powered OSINT runtime.
