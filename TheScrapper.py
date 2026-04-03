@@ -1,3 +1,4 @@
+import csv
 import json
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
@@ -32,6 +33,8 @@ def build_parser() -> ArgumentParser:
     p.add_argument("-s",   "--socials",        action="store_true", help="Extract and print social media links.")
     p.add_argument("--social-extract",         action="store_true", help="Fetch detailed info for found social media links (implies --socials).")
     p.add_argument("-o",   "--output",         action="store_true", help="Save output to a JSON file.")
+    p.add_argument("--csv",                    help="CSV or Excel (.xlsx) file with URLs. Reads URLs and writes results back.")
+    p.add_argument("--csv-column",             default="url", help="Column name containing URLs in the CSV/Excel file (default: 'url').")
     p.add_argument("-v",   "--verbose",        action="store_true", help="Verbose output.")
     return p
 
@@ -99,21 +102,137 @@ def save_output(data: dict | list, name: str) -> None:
     file_name = name.lower().replace("http://", "").replace("https://", "").replace("/", "")
     out_path = Path("output") / f"{file_name}.json"
     out_path.write_text(json.dumps(data, indent=4))
-    print(f"Saved → {out_path}")
+    print(f"Saved -> {out_path}")
+
+
+def save_csv_output(results: list, output_path: str) -> None:
+    """Save scrape results to a CSV file."""
+    Path("output").mkdir(exist_ok=True)
+    out_path = Path("output") / output_path
+
+    fieldnames = ["URL", "Emails", "Phone Numbers", "Social Media"]
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for result in results:
+            writer.writerow({
+                "URL": result.get("Target", ""),
+                "Emails": "; ".join(result.get("E-Mails", [])),
+                "Phone Numbers": "; ".join(result.get("Numbers", [])),
+                "Social Media": "; ".join(result.get("SocialMedia", [])),
+            })
+    print(f"Saved -> {out_path}")
+
+
+def read_csv_urls(file_path: str, column: str) -> list:
+    """Read URLs from a CSV file column."""
+    urls = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if column not in reader.fieldnames:
+            raise SystemExit(
+                f"Column '{column}' not found in CSV. "
+                f"Available columns: {', '.join(reader.fieldnames)}"
+            )
+        for row in reader:
+            url = row[column].strip()
+            if url:
+                urls.append(url)
+    return urls
+
+
+def read_excel_urls(file_path: str, column: str) -> list:
+    """Read URLs from an Excel (.xlsx) file column."""
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        raise SystemExit("openpyxl is required for Excel support. Install it with: pip install openpyxl")
+
+    wb = load_workbook(file_path, read_only=True)
+    ws = wb.active
+    headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+
+    if column not in headers:
+        raise SystemExit(
+            f"Column '{column}' not found in Excel file. "
+            f"Available columns: {', '.join(str(h) for h in headers if h)}"
+        )
+
+    col_idx = headers.index(column)
+    urls = []
+    for row in ws.iter_rows(min_row=2):
+        val = row[col_idx].value
+        if val and str(val).strip():
+            urls.append(str(val).strip())
+    wb.close()
+    return urls
+
+
+def save_excel_output(results: list, output_path: str) -> None:
+    """Save scrape results to an Excel (.xlsx) file."""
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        raise SystemExit("openpyxl is required for Excel support. Install it with: pip install openpyxl")
+
+    Path("output").mkdir(exist_ok=True)
+    out_path = Path("output") / output_path
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Scrape Results"
+    ws.append(["URL", "Emails", "Phone Numbers", "Social Media"])
+
+    for result in results:
+        ws.append([
+            result.get("Target", ""),
+            "; ".join(result.get("E-Mails", [])),
+            "; ".join(result.get("Numbers", [])),
+            "; ".join(result.get("SocialMedia", [])),
+        ])
+
+    wb.save(out_path)
+    print(f"Saved -> {out_path}")
 
 
 def main() -> None:
     args = build_parser().parse_args()
 
-    if not args.url and not args.urls:
-        raise SystemExit("Please add --url or --urls")
+    if not args.url and not args.urls and not args.csv:
+        raise SystemExit("Please add --url, --urls, or --csv")
 
     if not args.banner:
         print(BANNER)
 
     verbose = print if args.verbose else lambda *_: None
 
-    if args.url:
+    if args.csv:
+        csv_path = Path(args.csv)
+        if not csv_path.exists():
+            raise SystemExit(f"File not found: {args.csv}")
+
+        is_excel = csv_path.suffix.lower() in (".xlsx", ".xls")
+
+        if is_excel:
+            raw_urls = read_excel_urls(args.csv, args.csv_column)
+        else:
+            raw_urls = read_csv_urls(args.csv, args.csv_column)
+
+        results = []
+        for raw in raw_urls:
+            url = normalize_url(raw)
+            verbose(f"Scraping {url}")
+            result = scrape(url, args)
+            verbose("Done")
+            print_result(result, args)
+            results.append(result)
+
+        if is_excel:
+            save_excel_output(results, csv_path.stem + "_results.xlsx")
+        else:
+            save_csv_output(results, csv_path.stem + "_results.csv")
+
+    elif args.url:
         url = normalize_url(args.url)
         requests.get(url)
         verbose("Scraping started")
