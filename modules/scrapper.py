@@ -3,6 +3,12 @@ import requests
 from requests.models import Response
 from bs4 import BeautifulSoup
 
+# Shared session for connection pooling and default headers
+_session = requests.Session()
+_session.headers.update({
+    "User-Agent": "Mozilla/5.0 (compatible; TheScrapper/1.0; +https://github.com/AhmadShahzad/TheScrapper)"
+})
+
 
 class Scrapper:
     """
@@ -22,6 +28,7 @@ class Scrapper:
         self.urls = []
         self.contents = contents
         self.crawl = crawl
+        self._page_text = None
 
     def clean(self) -> list:
         """clean function
@@ -48,6 +55,15 @@ class Scrapper:
 
         return contents
 
+    def _fetch(self) -> str | None:
+        """Fetch the page once and cache the result."""
+        if self._page_text is None:
+            try:
+                self._page_text = _session.get(self.url, timeout=15).text
+            except requests.exceptions.RequestException:
+                self._page_text = ""
+        return self._page_text or None
+
     def getURLs(self) -> list:
         """getURLs function
 
@@ -56,7 +72,9 @@ class Scrapper:
         """
 
         urls: list = []
-        content: str = requests.get(self.url).text
+        content = self._fetch()
+        if content is None:
+            return urls
         soup = BeautifulSoup(content, "html.parser")
         for link in soup.find_all('a'):
             if link.get("href") is not None:
@@ -80,12 +98,13 @@ class Scrapper:
             for url in urls:
                 try:
                     if url is not None:
-                        req: Response = requests.get(url)
+                        req: Response = _session.get(url, timeout=15)
                         contents.append(req.text)
-                except requests.exceptions.MissingSchema:
+                except requests.exceptions.RequestException:
                     pass
         else:
-            req: Response = requests.get(self.url)
-            contents.append(req.text)
+            page = self._fetch()
+            if page:
+                contents.append(page)
         contents = Scrapper(contents=contents).clean()
         return {"text": contents, "urls": urls}

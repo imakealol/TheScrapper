@@ -1,6 +1,9 @@
 import csv
 import json
+import sys
+import threading
 from argparse import ArgumentParser, Namespace
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import requests
@@ -36,6 +39,7 @@ def build_parser() -> ArgumentParser:
     p.add_argument("--csv",                    help="CSV or Excel (.xlsx) file with URLs. Reads URLs and writes results back.")
     p.add_argument("--csv-column",             default="url", help="Column name containing URLs in the CSV/Excel file (default: 'url').")
     p.add_argument("-v",   "--verbose",        action="store_true", help="Verbose output.")
+    p.add_argument("-t",   "--threads",        type=int, default=5, help="Number of concurrent threads for batch scraping (default: 5).")
     return p
 
 
@@ -124,6 +128,33 @@ def save_csv_output(results: list, output_path: str) -> None:
     print(f"Saved -> {out_path}")
 
 
+class IncrementalCsvWriter:
+    """Writes results to CSV incrementally so progress isn't lost on crash."""
+
+    def __init__(self, output_path: str):
+        Path("output").mkdir(exist_ok=True)
+        self.out_path = Path("output") / output_path
+        self._fieldnames = ["URL", "Emails", "Phone Numbers", "Social Media"]
+        self._file = open(self.out_path, "w", newline="", encoding="utf-8")
+        self._writer = csv.DictWriter(self._file, fieldnames=self._fieldnames)
+        self._writer.writeheader()
+        self._lock = threading.Lock()
+
+    def write(self, result: dict) -> None:
+        with self._lock:
+            self._writer.writerow({
+                "URL": result.get("Target", ""),
+                "Emails": "; ".join(result.get("E-Mails", [])),
+                "Phone Numbers": "; ".join(result.get("Numbers", [])),
+                "Social Media": "; ".join(result.get("SocialMedia", [])),
+            })
+            self._file.flush()
+
+    def close(self) -> None:
+        self._file.close()
+        print(f"Saved -> {self.out_path}")
+
+
 def read_csv_urls(file_path: str, column: str) -> list:
     """Read URLs from a CSV file column."""
     urls = []
@@ -195,6 +226,42 @@ def save_excel_output(results: list, output_path: str) -> None:
     print(f"Saved -> {out_path}")
 
 
+def scrape_batch(urls: list, args: Namespace, verbose, csv_writer=None) -> list:
+    """Scrape multiple URLs concurrently using threads."""
+    results = {}
+    total = len(urls)
+    completed = 0
+    failed = 0
+    lock = threading.Lock()
+
+    def _scrape_one(url):
+        try:
+            return url, scrape(url, args)
+        except requests.exceptions.RequestException:
+            return url, None
+
+    with ThreadPoolExecutor(max_workers=args.threads) as pool:
+        futures = {pool.submit(_scrape_one, url): url for url in urls}
+        for future in as_completed(futures):
+            url, result = future.result()
+            with lock:
+                completed += 1
+                if result is not None:
+                    results[url] = result
+                    if csv_writer:
+                        csv_writer.write(result)
+                else:
+                    failed += 1
+                sys.stderr.write(
+                    f"\r[{completed}/{total}] Done: {completed - failed} | Failed: {failed}  "
+                )
+                sys.stderr.flush()
+
+    sys.stderr.write("\n")
+    # Preserve original URL order in output
+    return [results[url] for url in urls if url in results]
+
+
 def main() -> None:
     args = build_parser().parse_args()
 
@@ -218,42 +285,44 @@ def main() -> None:
         else:
             raw_urls = read_csv_urls(args.csv, args.csv_column)
 
-        results = []
-        for raw in raw_urls:
-            url = normalize_url(raw)
-            verbose(f"Scraping {url}")
-            result = scrape(url, args)
-            verbose("Done")
-            print_result(result, args)
-            results.append(result)
+        urls = [normalize_url(raw) for raw in raw_urls]
+        verbose(f"Scraping {len(urls)} URLs with {args.threads} threads...")
 
         if is_excel:
+            results = scrape_batch(urls, args, verbose)
+            for result in results:
+                print_result(result, args)
             save_excel_output(results, csv_path.stem + "_results.xlsx")
         else:
-            save_csv_output(results, csv_path.stem + "_results.csv")
+            writer = IncrementalCsvWriter(csv_path.stem + "_results.csv")
+            results = scrape_batch(urls, args, verbose, csv_writer=writer)
+            writer.close()
+            for result in results:
+                print_result(result, args)
 
     elif args.url:
         url = normalize_url(args.url)
-        requests.get(url)
         verbose("Scraping started")
-        result = scrape(url, args)
+        try:
+            result = scrape(url, args)
+        except requests.exceptions.RequestException as e:
+            raise SystemExit(f"[!] Failed to scrape {url}: {e}")
         verbose("Done")
         print_result(result, args)
         if args.output:
             save_output(result, url)
 
     else:
-        results = []
-        for raw in Path(args.urls).read_text().splitlines():
-            url = normalize_url(raw.strip())
-            if not url:
-                continue
-            requests.get(url)
-            verbose(f"Scraping {url}")
-            result = scrape(url, args)
-            verbose("Done")
+        raw_urls = [
+            raw.strip() for raw in Path(args.urls).read_text().splitlines()
+            if raw.strip()
+        ]
+        urls = [normalize_url(raw) for raw in raw_urls]
+        verbose(f"Scraping {len(urls)} URLs with {args.threads} threads...")
+        results = scrape_batch(urls, args, verbose)
+
+        for result in results:
             print_result(result, args)
-            results.append(result)
 
         if args.output:
             save_output(results, args.urls.replace("/", "_"))
