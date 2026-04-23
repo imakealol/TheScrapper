@@ -86,6 +86,8 @@ with st.sidebar:
 
     st.subheader("Settings")
     crawl = st.checkbox("Crawl links on each page", value=False)
+    crawl_pages = st.number_input("Max crawled links", min_value=1, value=2, step=1, disabled=not crawl)
+    crawl_external = st.checkbox("Include external links while crawling", value=False, disabled=not crawl)
     threads = st.slider("Threads", min_value=1, max_value=50, value=10)
 
 # Build a fake Namespace matching what scrape() expects
@@ -94,7 +96,8 @@ args = Namespace(
     number=extract_numbers and not (extract_emails and extract_numbers and extract_socials),
     socials=extract_socials and not (extract_emails and extract_numbers and extract_socials),
     social_extract=False,
-    crawl=crawl,
+    crawl=int(crawl_pages) if crawl else 0,
+    crawl_external=crawl_external if crawl else False,
     threads=threads,
 )
 # If all three are checked, set all to False so scrape() defaults to extracting everything

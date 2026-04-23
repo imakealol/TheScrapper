@@ -1,5 +1,6 @@
 import re
 import string
+from urllib.parse import urlparse
 
 import requests.exceptions
 from socid_extractor import parse, extract
@@ -80,13 +81,24 @@ class InfoReader:
             list: [description]
         """
         sm_accounts: list = []
-        socials: object = open(self.social_path, "r+").readlines()
+        with open(self.social_path, "r", encoding="utf-8") as f:
+            socials = [line.strip().lower() for line in f.readlines() if line.strip()]
+
+        target = self.content.get("target", "")
+        target_host = urlparse(target).netloc.lower() if target else ""
 
         for url in self.content["urls"]:
-            for s in socials:
-                if url is None:
-                    continue
-                if s.replace("\n", "").lower() in url.lower():
+            if url is None:
+                continue
+
+            parsed_host = urlparse(url).netloc.lower()
+            lowered_url = url.lower()
+            for social_host in socials:
+                if social_host in lowered_url:
+                    # When the target itself is on a social platform, internal links
+                    # from the same host are usually noisy for --social-extract.
+                    if target_host and parsed_host and parsed_host == target_host:
+                        continue
                     sm_accounts.append(url)
         return list(dict.fromkeys(sm_accounts))
 

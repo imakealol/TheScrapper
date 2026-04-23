@@ -65,11 +65,6 @@ python3 TheScrapper.py --help
 If you wish to add more social media sites for scraping, you can do so by appending them to the `socials.txt` file.
 Feel free to contribute by submitting a pull request if you'd like to share your additions with the community.
 
-## Known Problems
-
-When using a website that is already included in the `socials.txt` file, the `--social-extract` flag may produce less
-useful output. To avoid this, consider excluding such URLs or refraining from using the flag.
-
 ### LICENSE - [GNU](LICENSE)
 ---
 Built by [champmq](https://github.com/champmq) -- also check out [CoSINT](https://github.com/champmq/cosint), an

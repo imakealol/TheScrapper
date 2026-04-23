@@ -5,8 +5,10 @@ import threading
 from argparse import ArgumentParser, Namespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
+from socid_extractor import extract, parse
 
 from modules.info_reader import InfoReader
 from modules.scrapper import Scrapper
@@ -29,7 +31,20 @@ def build_parser() -> ArgumentParser:
     p = ArgumentParser(description="TheScrapper - Contact finder")
     p.add_argument("-u",   "--url",            help="Target URL.")
     p.add_argument("-us",  "--urls",           help="File containing target URLs (one per line).")
-    p.add_argument("-c",   "--crawl",          action="store_true", help="Crawl every URL found on the site.")
+    p.add_argument(
+        "-c",
+        "--crawl",
+        nargs="?",
+        const=2,
+        type=int,
+        default=0,
+        help="Crawl up to N discovered URLs. If used without a value, defaults to 2.",
+    )
+    p.add_argument(
+        "--crawl-external",
+        action="store_true",
+        help="Include external URLs when crawling. Without this flag, only internal URLs are crawled.",
+    )
     p.add_argument("-b",   "--banner",         action="store_true", help="Suppress the banner.")
     p.add_argument("-e",   "--email",          action="store_true", help="Extract email addresses.")
     p.add_argument("-n",   "--number",         action="store_true", help="Extract phone numbers.")
@@ -51,8 +66,10 @@ def normalize_url(url: str) -> str:
 
 def scrape(url: str, args: Namespace) -> dict:
     """Scrape a single URL and return structured results."""
-    scrap = Scrapper(url=url, crawl=args.crawl)
-    ir = InfoReader(content=scrap.getText())
+    scrap = Scrapper(url=url, crawl=args.crawl, crawl_external=args.crawl_external)
+    content = scrap.getText()
+    content["target"] = url
+    ir = InfoReader(content=content)
 
     extract_contacts = not args.email and not args.number and not args.socials
     want_sm = args.socials or args.social_extract
@@ -85,16 +102,43 @@ def print_result(result: dict, args: Namespace) -> None:
     if "SocialMedia" in result:
         sm = result["SocialMedia"]
         if args.social_extract:
-            ir = InfoReader(content=Scrapper(url=result["Target"], crawl=False).getText())
             print("SocialMedia:")
-            for entry in ir.getSocialsInfo():
-                sm_url, info = entry["url"], entry["info"]
+            for sm_url in sm:
+                try:
+                    text, _ = parse(sm_url)
+                    info = extract(text)
+                except Exception:
+                    info = None
                 if info:
                     print(f" - {sm_url}:")
                     for k, v in info.items():
                         print(f"     - {k}: {v}")
                 else:
                     print(f" - {sm_url}")
+
+            # If target itself is a social URL and no external socials were found,
+            # extract profile info from the target URL directly.
+            if not sm:
+                target_url = result.get("Target", "")
+                try:
+                    host = urlparse(target_url).netloc.lower()
+                except Exception:
+                    host = ""
+
+                socials = [s.strip().lower() for s in Path("socials.txt").read_text(encoding="utf-8").splitlines() if s.strip()]
+                if any(s in host for s in socials):
+                    try:
+                        text, _ = parse(target_url)
+                        info = extract(text)
+                    except Exception:
+                        info = None
+
+                    if info:
+                        print(f" - {target_url}:")
+                        for k, v in info.items():
+                            print(f"     - {k}: {v}")
+                    else:
+                        print(f" - {target_url}")
         else:
             print("SocialMedia: " + (", ".join(sm) if sm else "(none)"))
 
@@ -264,6 +308,9 @@ def scrape_batch(urls: list, args: Namespace, verbose, csv_writer=None) -> list:
 
 def main() -> None:
     args = build_parser().parse_args()
+
+    if args.crawl < 0:
+        raise SystemExit("--crawl must be 0 or a positive integer")
 
     if not args.url and not args.urls and not args.csv:
         raise SystemExit("Please add --url, --urls, or --csv")

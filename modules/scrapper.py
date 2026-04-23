@@ -2,6 +2,7 @@ from typing import Any
 import requests
 from requests.models import Response
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 
 # Shared session for connection pooling and default headers
 _session = requests.Session()
@@ -15,20 +16,29 @@ class Scrapper:
     Scrapper Class
     """
 
-    def __init__(self, url: str = None, contents: list = [], crawl=False) -> None:
+    def __init__(self, url: str = None, contents: list = [], crawl: int = 0, crawl_external: bool = False) -> None:
         """Contructor
 
         Args:
             url (str): [description]. Defaults to None.
             contents (list, optional): Defaults to [].
-            crawl (bool): Defaults to False.
+            crawl (int): Max number of discovered URLs to crawl. 0 disables crawling.
+            crawl_external (bool): Include external URLs while crawling.
         """
 
         self.url = url
         self.urls = []
         self.contents = contents
-        self.crawl = crawl
+        self.crawl = max(0, int(crawl or 0))
+        self.crawl_external = crawl_external
         self._page_text = None
+
+    def _is_internal_url(self, url: str) -> bool:
+        if not self.url:
+            return False
+        base_host = urlparse(self.url).netloc.lower()
+        target_host = urlparse(url).netloc.lower()
+        return base_host == target_host
 
     def clean(self) -> list:
         """clean function
@@ -94,12 +104,18 @@ class Scrapper:
         """
         urls = self.getURLs()
         contents: list = []
-        if self.crawl:
+        if self.crawl > 0:
+            fetched = 0
             for url in urls:
+                if fetched >= self.crawl:
+                    break
                 try:
-                    if url is not None:
+                    if url is not None and url.startswith(("http://", "https://")):
+                        if not self.crawl_external and not self._is_internal_url(url):
+                            continue
                         req: Response = _session.get(url, timeout=15)
                         contents.append(req.text)
+                        fetched += 1
                 except requests.exceptions.RequestException:
                     pass
         else:
